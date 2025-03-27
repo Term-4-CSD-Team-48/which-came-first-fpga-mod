@@ -1,0 +1,55 @@
+module which_came_first (
+    input clk,  // clock
+    input rst,  // reset
+    input btn_a,
+    input btn_b,
+    input reset_to_listening,
+    output out[2]
+) {
+    enum States {
+        LISTENING,
+        DETERMINED
+    }
+    
+    const CLK_FREQ = $is_sim() ? 1000 : 100000000
+    
+    .clk(clk) {
+        edge_detector btn_edge[2](#RISE({1,1}), #FALL({0,0}))
+        edge_detector reset_to_listening_edge(#RISE(1), #FALL(0))
+        button_conditioner btn_cond[2](#CLK_FREQ({CLK_FREQ, CLK_FREQ}))
+        button_conditioner reset_to_listening_cond(#CLK_FREQ(CLK_FREQ))
+        .rst(rst) {
+            dff states[$width(States)](#INIT(States.LISTENING))
+            dff out_dff[$width(out)]
+        }
+    }
+    
+    always {
+        btn_cond.in = c{btn_a, btn_b}
+        btn_edge.in = btn_cond.out
+        
+        reset_to_listening_cond.in = reset_to_listening
+        reset_to_listening_edge.in = reset_to_listening_cond.out
+        
+        states.d = states.q
+        out_dff.d = out_dff.q
+        
+        case(states.q) {
+            States.LISTENING:
+                if (btn_edge.out[0]) { // btn_a wins if faster or same itme
+                    out_dff.d = 2b10
+                    states.d = States.DETERMINED
+                } else if (btn_edge.out[1]) { // btn_b wins if faster
+                    out_dff.d = 2b01
+                    states.d = States.DETERMINED
+                } else { // still listening
+                    out_dff.d = 0
+                }
+            States.DETERMINED:
+                if (reset_to_listening_edge.out)
+                    states.d = States.LISTENING
+        }
+        
+        out = out_dff.q
+    }
+}
